@@ -18,40 +18,55 @@ struct Buffer
     int out;
     int count;
     int size;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
+
+    pthread_mutex_t m;
+    pthread_cond_t c;
 };
 
 void put(struct Buffer *b, char c)
 {
-    pthread_mutex_lock(&b->mutex);
     printf("put\n");
+
+    pthread_mutex_lock(&b->m);
     while (b->count == b->size)
-        pthread_cond_wait(&b->cond, &b->mutex);
+    {
+        pthread_cond_wait(&b->c, &b->m);
+    }
+
     b->buf[b->in] = c;
     b->in = (b->in + 1) % b->size;
-    ++b->count;
-    pthread_cond_signal(&b->cond);
-    pthread_mutex_unlock(&b->mutex);
+    ++(b->count);
+
+    pthread_cond_signal(&b->c);
+    pthread_mutex_unlock(&b->m);
 }
 
 char get(struct Buffer *b)
 {
-    pthread_mutex_lock(&b->mutex);
     printf("get\n");
+
+    pthread_mutex_lock(&b->m);
     while (b->count == 0)
-        pthread_cond_wait(&b->cond, &b->mutex);
+    {
+        pthread_cond_wait(&b->c, &b->m);
+    }
+
     char c = b->buf[b->out];
     b->buf[b->out] = '\0';
     b->out = (b->out + 1) % b->size;
-    --b->count;
-    pthread_cond_signal(&b->cond);
-    pthread_mutex_unlock(&b->mutex);
+    --(b->count);
+
+    pthread_cond_signal(&b->c);
+    pthread_mutex_unlock(&b->m);
+
     return c;
 }
 
 void initBuffer(struct Buffer *b, int size)
 {
+    pthread_mutex_init(&b->m, NULL);
+    pthread_cond_init(&b->c, NULL);
+
     b->in = 0;
     b->out = 0;
     b->count = 0;
@@ -59,15 +74,14 @@ void initBuffer(struct Buffer *b, int size)
     b->buf = (char *)malloc(sizeof(char) * size);
     if (b->buf == NULL)
         exit(-1);
-    pthread_mutex_init(&b->mutex, NULL);
-    pthread_cond_init(&b->cond, NULL);
 }
 
 void destroyBuffer(struct Buffer *b)
 {
+    pthread_mutex_destroy(&b->m);
+    pthread_cond_destroy(&b->c);
+
     free(b->buf);
-    pthread_mutex_destroy(&b->mutex);
-    pthread_cond_destroy(&b->cond);
 }
 
 int getRandSleepTime()
