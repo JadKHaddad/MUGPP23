@@ -1,5 +1,5 @@
 CXX = gcc
-STD = 
+STD = -std=c99
 CFLAGS = -Wall -Wextra -pedantic -Wcast-align -Wpointer-arith -Wcast-qual -Wno-missing-braces -Wformat -Wformat-security
 LIBS = -pthread
 
