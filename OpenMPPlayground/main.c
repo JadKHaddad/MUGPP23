@@ -199,6 +199,18 @@ long fib(int n)
     return fn;
 }
 
+int sum_from_one_to_n(int n)
+{
+    int i;
+    int sum = 0;
+#pragma omp parallel for private(i) shared(n) reduction(+ : sum) schedule(static)
+    for (i = 1; i <= n; ++i)
+    {
+        sum += i;
+    }
+    return sum;
+}
+
 int main(int argc, char *argv[])
 {
     hello();
@@ -209,6 +221,7 @@ int main(int argc, char *argv[])
     vector_print(a, "a", N);
     printf("\n");
     vector_print(b, "b", N);
+    printf("\n");
 
     vector_add(a, b, c, N, CHUNK);
     vector_print(c, "c", N);
@@ -251,6 +264,10 @@ int main(int argc, char *argv[])
     printf("\n");
     matrix_mul(m, n, p, WIDTH);
     matrix_print(p, "p", WIDTH);
+    printf("\n");
+
+    int sum = sum_from_one_to_n(N);
+    printf("Sum from 1 to %d: %d\n", N, sum);
 
     return 0;
 }
