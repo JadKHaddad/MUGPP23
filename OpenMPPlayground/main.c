@@ -211,6 +211,33 @@ int sum_from_one_to_n(int n)
     return sum;
 }
 
+int sum_vector(int *arr, int n)
+{
+    int i;
+    int sum = 0;
+#pragma omp parallel for private(i) shared(n) reduction(+ : sum) schedule(static)
+    for (i = 0; i < n; ++i)
+    {
+        sum += arr[i];
+    }
+    return sum;
+}
+
+int openmp_max(int *arr, int n)
+{
+    int i;
+    int max = arr[0];
+#pragma omp parallel for private(i) shared(n) reduction(max : max) schedule(static)
+    for (i = 1; i < n; ++i)
+    {
+        if (arr[i] > max)
+        {
+            max = arr[i];
+        }
+    }
+    return max;
+}
+
 int main(int argc, char *argv[])
 {
     hello();
@@ -268,6 +295,13 @@ int main(int argc, char *argv[])
 
     int sum = sum_from_one_to_n(N);
     printf("Sum from 1 to %d: %d\n", N, sum);
+
+    int arr[10] = {1, 20, 3, 98, 5, -11, 7, 998, 8, 10};
+    int max = openmp_max(arr, 10);
+    printf("Max of array: %d\n", max);
+
+    int sum_arr = sum_vector(arr, 10);
+    printf("Sum of array: %d\n", sum_arr);
 
     return 0;
 }
