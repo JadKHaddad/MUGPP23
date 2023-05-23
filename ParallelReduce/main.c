@@ -49,22 +49,43 @@ int reduce(int (*op)(int, int),
 
 struct thread_data
 {
-    int *data_chunk;
+    int id;
+    int *data;
     int len;
-    int result;
-    pthread_barrier_t *barrier;
+    int start_index;
+    int chunk_size;
     int (*op)(int, int);
+    pthread_barrier_t *barrier;
 };
 
 void *thread_func(void *arg)
 {
     struct thread_data *thread_data = (struct thread_data *)arg;
-    int i;
-    thread_data->result = thread_data->data_chunk[0];
-    for (i = 1; i < thread_data->len; ++i)
-        thread_data->result = thread_data->op(thread_data->result, thread_data->data_chunk[i]);
+
+    // this is the first round of the algorithm where each thread reduces its chunk
+    for (int i = thread_data->start_index + 1; i < thread_data->chunk_size + thread_data->start_index; ++i)
+    {
+        thread_data->data[thread_data->start_index] = thread_data->op(thread_data->data[thread_data->start_index], thread_data->data[i]);
+    }
 
     pthread_barrier_wait(thread_data->barrier);
+
+    // in the second round we go through a loop cutting the count of threads in half each time depending on the thread id
+    // and each thread reduces its element with other element, for which no other thread is responsible
+    // this is done until only one thread is left
+
+    int count = thread_data->chunk_size;
+    int offset = 1;
+    while (count > 1)
+    {
+        if (thread_data->id % (2 * offset) == 0)
+        {
+            thread_data->data[thread_data->start_index] = thread_data->op(thread_data->data[thread_data->start_index], thread_data->data[thread_data->start_index + offset]);
+        }
+        count /= 2;
+        offset *= 2;
+        //pthread_barrier_wait(thread_data->barrier);
+    }
 
     return NULL;
 };
@@ -93,15 +114,21 @@ int parallel_reduce(int (*op)(int, int),
 
     // init thread_data
     for (int i = 0; i < system_threads - 1; i++)
-    {
-        thread_data_array[i].data_chunk = data + i * chunk_size;
-        thread_data_array[i].len = chunk_size;
+    {   
+        thread_data_array[i].id = i;
+        thread_data_array[i].data = data;
+        thread_data_array[i].len = len;
+        thread_data_array[i].start_index = i * chunk_size;
+        thread_data_array[i].chunk_size = chunk_size;
         thread_data_array[i].op = op;
         thread_data_array[i].barrier = &barrier;
     }
     // last thread gets the remainder
-    thread_data_array[system_threads - 1].data_chunk = data + (system_threads - 1) * chunk_size;
-    thread_data_array[system_threads - 1].len = chunk_size + remainder;
+    thread_data_array[system_threads - 1].id = system_threads - 1;
+    thread_data_array[system_threads - 1].data = data;
+    thread_data_array[system_threads - 1].len = len;
+    thread_data_array[system_threads - 1].start_index = (system_threads - 1) * chunk_size;
+    thread_data_array[system_threads - 1].chunk_size = chunk_size + remainder;
     thread_data_array[system_threads - 1].op = op;
     thread_data_array[system_threads - 1].barrier = &barrier;
 
@@ -110,9 +137,9 @@ int parallel_reduce(int (*op)(int, int),
     {
         printf("Thread %i: ", i);
         struct thread_data thread_data = thread_data_array[i];
-        for (int j = 0; j < thread_data.len; j++)
+        for (int j = 0; j < thread_data.chunk_size; j++)
         {
-            printf("%i ", thread_data.data_chunk[j]);
+            printf("%i ", thread_data.data[thread_data.start_index + j]);
         }
         printf("\n");
     }
@@ -133,8 +160,12 @@ int parallel_reduce(int (*op)(int, int),
     printf("Results:\n");
     for (int i = 0; i < system_threads; i++)
     {
-        printf("Thread %i: %i\n", i, thread_data_array[i].result);
+        printf("Thread %i: %i\n", i, thread_data_array[i].data[thread_data_array[i].start_index]);
     }
+
+    printf("\n\n[%i]\n\n", data[0]);
+
+    pthread_barrier_destroy(&barrier);
 }
 
 int main()
