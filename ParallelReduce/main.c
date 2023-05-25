@@ -58,49 +58,6 @@ void print_data(int *data, int len)
     printf("\n");
 }
 
-struct thread_data
-{
-    int id;
-    int *data;
-    int len;
-    int start_index;
-    int chunk_size;
-    int (*op)(int, int);
-    pthread_barrier_t *barrier;
-};
-
-void *thread_func(void *arg)
-{
-    struct thread_data *thread_data = (struct thread_data *)arg;
-
-    // this is the first round of the algorithm where each thread reduces its chunk
-    for (int i = thread_data->start_index + 1; i < thread_data->chunk_size + thread_data->start_index; ++i)
-    {
-        thread_data->data[thread_data->start_index] = thread_data->op(thread_data->data[thread_data->start_index], thread_data->data[i]);
-    }
-
-    pthread_barrier_wait(thread_data->barrier);
-
-    // in the second round we go through a loop cutting the count of threads in half each time depending on the thread id
-    // and each thread reduces its element with other element, for which no other thread is responsible
-    // this is done until only one thread is left
-
-    int count = thread_data->chunk_size;
-    int offset = 1;
-    while (count > 1)
-    {
-        if (thread_data->id % (2 * offset) == 0)
-        {
-            thread_data->data[thread_data->start_index] = thread_data->op(thread_data->data[thread_data->start_index], thread_data->data[thread_data->start_index + offset]);
-        }
-        count /= 2;
-        offset *= 2;
-        // pthread_barrier_wait(thread_data->barrier);
-    }
-
-    return NULL;
-};
-
 struct kernel_arg
 {
     int id;
@@ -259,19 +216,104 @@ int parallel_reduce(int (*op)(int, int),
     return result;
 }
 
+
+struct kernel_arg_2
+{
+    int tid;
+    int number_of_threads;
+    int (*op)(int, int);
+    int *data;
+    int len;
+    pthread_barrier_t *barrier;
+};
+
+void* kernel_if_exp_2(void *arg){
+    struct kernel_arg_2 *kernel_arg = (struct kernel_arg_2 *)arg;
+
+    const int tid = kernel_arg->tid;
+	int step_size = 1;
+	int number_of_threads = kernel_arg->number_of_threads;
+
+    printf("Thread %i started\n", tid);
+    while (number_of_threads > 0)
+	{   
+        printf("Thread %i threads: %i\n", tid, number_of_threads);
+
+		if (tid < number_of_threads) // still alive?
+		{
+			const int fst = tid * step_size * 2;
+			const int snd = fst + step_size;
+
+            printf("Thread %i reducing [%i] and [%i] in [%i]\n", tid, fst, snd, fst);
+            kernel_arg->data[fst] += kernel_arg->data[snd];
+		}
+
+        step_size = step_size << 1;
+        number_of_threads = number_of_threads >> 1;
+
+        pthread_barrier_wait(kernel_arg->barrier);
+	}
+
+    return NULL;
+}
+
+int parallel_reduce_if_exp_2(int (*op)(int, int),
+                    int *data,
+                    int len) {
+
+    const int number_of_threads = len / 2;
+
+    pthread_t threads[number_of_threads];
+    struct kernel_arg_2 kernel_arg_array[number_of_threads];
+    
+    pthread_barrier_t barrier;
+    pthread_barrier_init(&barrier, NULL, number_of_threads);
+
+    for (int i = 0; i< number_of_threads; i++) {
+        kernel_arg_array[i].tid = i;
+        kernel_arg_array[i].number_of_threads = number_of_threads;
+        kernel_arg_array[i].op = op;
+        kernel_arg_array[i].data = data;
+        kernel_arg_array[i].len = len;
+        kernel_arg_array[i].barrier = &barrier;
+
+        pthread_create(&threads[i], NULL, kernel_if_exp_2, (void *)(kernel_arg_array + i));
+    }
+
+    for (int i = 0; i < number_of_threads; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    pthread_barrier_destroy(&barrier);
+
+    return data[0];
+}
+
+
 int main()
 {
-    int data[] = {1, 2, 3, 4, 5,  6 , 7, 8, 9, 10};
+    int data[] = {1, 2, 3, 4, 5,  6 , 7, 8};
+    int len = 8;
+
+    int seq_sum = reduce(sum, data, len);
+    int par_sum = parallel_reduce_if_exp_2(sum, data, len);
+
+    printf("seq sum: %i; par sum: %i\n", seq_sum, par_sum);
+
+
+
+
 
     //int m = reduce(max, data, 10);
     //int s = reduce(sum, data, 10);
 
     //printf("max : %i; sum: %i\n", m, s);
 
-    int pm = parallel_reduce(max, data, 10);
-    int ps = parallel_reduce(sum, data, 10);
+    //int pm = parallel_reduce(max, data, 10);
+    //int ps = parallel_reduce(sum, data, 10);
 
-    printf("parallel max : %i; parallel sum: %i\n", pm, ps);
+    //printf("parallel max : %i; parallel sum: %i\n", pm, ps);
     return 0;
 }
 
