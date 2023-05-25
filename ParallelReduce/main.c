@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <pthread.h>
+#include <stdlib.h>
 
 long get_number_of_processors()
 {
@@ -47,6 +48,16 @@ int reduce(int (*op)(int, int),
     return result;
 }
 
+void print_data(int *data, int len)
+{
+    printf("Data: ");
+    for (int i = 0; i < len; i++)
+    {
+        printf("%i ", data[i]);
+    }
+    printf("\n");
+}
+
 struct thread_data
 {
     int id;
@@ -84,103 +95,183 @@ void *thread_func(void *arg)
         }
         count /= 2;
         offset *= 2;
-        //pthread_barrier_wait(thread_data->barrier);
+        // pthread_barrier_wait(thread_data->barrier);
     }
 
     return NULL;
 };
 
+struct kernel_arg
+{
+    int id;
+    int (*op)(int, int);
+    int *data;
+    int len;
+    int start_index;
+    int end_index;
+    int total_threads;
+    pthread_barrier_t *barrier;
+};
+
+void *kernel(void *arg)
+{   
+    struct kernel_arg *kernel_args = (struct kernel_arg *)arg;
+
+    int id = kernel_args->id;
+    int start_index = kernel_args->start_index;
+    int end_index = kernel_args->end_index;
+    int result = kernel_args->data[start_index];
+
+    printf("Thread %i started\n", id);
+
+    printf("Thread %i chunk: %i - %i | from [%i] to [%i]\n", id, start_index, end_index, kernel_args->data[start_index], kernel_args->data[end_index]);
+    
+    // round 1
+    for (int i = start_index + 1; i < end_index + 1; ++i)
+    {
+        result = kernel_args->op(result, kernel_args->data[i]);
+    }
+
+    printf("Thread %i reduced own chunk: %i\n", id, result);
+    pthread_barrier_wait(kernel_args->barrier);
+
+    // at this point the amount of data to be reduced is halved and matches the number of threads
+    // so lets rerrange it. every thread will copy its data to the first half of the array
+    // and the second half will be filled just ignored
+    printf("Thread %i rearranging data from [%i] to [%i]\n", id, start_index, id);
+    kernel_args->data[id] = result;
+    pthread_barrier_wait(kernel_args->barrier);
+    
+    // round 2
+
+	int step_size = 1;
+	int n_threads = kernel_args->len / 2;
+
+	while (n_threads > 0)
+	{
+		if (id < n_threads) // still alive?
+		{
+			int fst = id * step_size * 2;
+			int snd = fst + step_size;
+
+            printf("Thread %i reducing [%i] and [%i]\n", id, fst, snd);
+
+            kernel_args->data[fst] = kernel_args->op(kernel_args->data[fst], kernel_args->data[snd]);
+		}
+
+        pthread_barrier_wait(kernel_args->barrier);
+		step_size <<= 1; 
+		n_threads >>= 1;
+	}
+
+    return NULL;
+}
+
 int parallel_reduce(int (*op)(int, int),
                     int *data,
                     int len)
-{
+{   
     long system_threads = get_number_of_processors();
 
     printf("Number of processors: %li\n", system_threads);
-    printf("Creating %li threads\n", system_threads);
+    if (system_threads < 2)
+    {
+        if (system_threads == -1)
+        {
+            printf("Could not determine number of processors\n");
+        }
+        printf("Not enough processors available, using sequential reduce\n");
+        return reduce(op, data, len);
+    }
 
-    pthread_barrier_t barrier;
-    pthread_barrier_init(&barrier, NULL, system_threads);
-
-    int result = 0;
-
-    pthread_t threads[system_threads];
-    struct thread_data thread_data_array[system_threads];
+    // since we are updating in place we need to copy the data
+    int *data_copy = malloc(len * sizeof(int));
+    for (int i = 0; i < len; i++)
+    {
+        data_copy[i] = data[i];
+    }
+    
+    printf("Setting up %li threads\n", system_threads);
+    if (len < system_threads)
+    {
+        printf("Data size is smaller than number of processors\n");
+        system_threads = len;
+    }
 
     int chunk_size = len / system_threads;
-    int remainder = len % system_threads;
-
     printf("Chunk size: %i\n", chunk_size);
 
-    // init thread_data
-    for (int i = 0; i < system_threads - 1; i++)
+    pthread_t threads[system_threads];
+    struct kernel_arg kernel_arg_array[system_threads];
+
+    printf("Calculating number of spawnable threads\n");
+
+    int total_threads = 0;
+    for (int i = 0; i < system_threads; i++)
     {   
-        thread_data_array[i].id = i;
-        thread_data_array[i].data = data;
-        thread_data_array[i].len = len;
-        thread_data_array[i].start_index = i * chunk_size;
-        thread_data_array[i].chunk_size = chunk_size;
-        thread_data_array[i].op = op;
-        thread_data_array[i].barrier = &barrier;
-    }
-    // last thread gets the remainder
-    thread_data_array[system_threads - 1].id = system_threads - 1;
-    thread_data_array[system_threads - 1].data = data;
-    thread_data_array[system_threads - 1].len = len;
-    thread_data_array[system_threads - 1].start_index = (system_threads - 1) * chunk_size;
-    thread_data_array[system_threads - 1].chunk_size = chunk_size + remainder;
-    thread_data_array[system_threads - 1].op = op;
-    thread_data_array[system_threads - 1].barrier = &barrier;
+        total_threads += 1;
 
-    printf("Distributing data:\n");
-    for (int i = 0; i < system_threads; i++)
-    {
-        printf("Thread %i: ", i);
-        struct thread_data thread_data = thread_data_array[i];
-        for (int j = 0; j < thread_data.chunk_size; j++)
+        kernel_arg_array[i].id = i;
+        kernel_arg_array[i].op = op;
+        kernel_arg_array[i].data = data_copy;
+        kernel_arg_array[i].len = len;
+
+        int start_index = i * chunk_size * 2;
+        int end_index = start_index + chunk_size;
+
+        kernel_arg_array[i].start_index = start_index;
+        kernel_arg_array[i].end_index = end_index;
+
+        int start_index_next_thread = (i + 1) * chunk_size * 2;
+        int end_index_next_thread = start_index_next_thread + chunk_size;
+
+        // if end_index_next_thread is out of bounds, we include the rest of the data in the chunk
+        if (end_index_next_thread >= len)
         {
-            printf("%i ", thread_data.data[thread_data.start_index + j]);
+            kernel_arg_array[i].end_index = len -1;
+            break;
         }
-        printf("\n");
     }
 
-    // so lets start the threads for one round
-    for (int i = 0; i < system_threads; i++)
+    printf("Spawnable threads: %i\n", total_threads);
+
+    pthread_barrier_t barrier;
+    pthread_barrier_init(&barrier, NULL, total_threads);
+
+    for (int i = 0; i < total_threads; i++)
     {
-        struct thread_data *thread_data = &thread_data_array[i];
-        pthread_create(&threads[i], NULL, thread_func, (void *)thread_data);
+        kernel_arg_array[i].total_threads = total_threads;
+        kernel_arg_array[i].barrier = &barrier;
+        pthread_create(&threads[i], NULL, kernel, (void *)(kernel_arg_array + i));
     }
-    // join threads
-    for (int i = 0; i < system_threads; i++)
+
+    for (int i = 0; i < total_threads; i++)
     {
         pthread_join(threads[i], NULL);
     }
 
-    // just see the results
-    printf("Results:\n");
-    for (int i = 0; i < system_threads; i++)
-    {
-        printf("Thread %i: %i\n", i, thread_data_array[i].data[thread_data_array[i].start_index]);
-    }
-
-    printf("\n\n[%i]\n\n", data[0]);
-
+    print_data(data_copy, len);
+    
+    int result = data_copy[0];
     pthread_barrier_destroy(&barrier);
+    free(data_copy);
+
+    return result;
 }
 
 int main()
 {
-    int data[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    int data[] = {1, 2, 3, 4, 5,  6 , 7, 8, 9, 10};
 
-    // int m = reduce(max, data, 10);
-    // int s = reduce(sum, data, 10);
+    //int m = reduce(max, data, 10);
+    //int s = reduce(sum, data, 10);
 
-    // printf("max : %i; sum: %i\n", m, s);
+    //printf("max : %i; sum: %i\n", m, s);
 
-    // int pm = parallel_reduce(max, data, 10);
+    int pm = parallel_reduce(max, data, 10);
     int ps = parallel_reduce(sum, data, 10);
 
-    // printf("parallel max : %i; parallel sum: %i\n", pm, ps);
+    printf("parallel max : %i; parallel sum: %i\n", pm, ps);
     return 0;
 }
 
