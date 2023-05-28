@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <pthread.h>
-#include "main.h"
+
+void *parallel_reduce_inner(void *arg);
+
+int parallel_reduce(int (*op)(int, int),
+                    int *data,
+                    int len);
 
 int max(int a, int b)
 {
@@ -75,7 +80,7 @@ void *kernel(void *arg)
     return NULL;
 }
 
-struct parallel_reduce_inner
+struct parallel_reduce_inner_arg
 {
     int (*op)(int, int);
     int *data;
@@ -85,9 +90,9 @@ struct parallel_reduce_inner
 
 void *parallel_reduce_inner(void *arg)
 {
-    struct parallel_reduce_inner *inner = (struct parallel_reduce_inner *)arg;
-    int result = parallel_reduce(inner->op, inner->data, inner->len);
-    inner->result = result;
+    struct parallel_reduce_inner_arg *inner_arg = (struct parallel_reduce_inner_arg *)arg;
+    int result = parallel_reduce(inner_arg->op, inner_arg->data, inner_arg->len);
+    inner_arg->result = result;
 
     return NULL;
 }
@@ -97,7 +102,7 @@ int parallel_reduce(int (*op)(int, int),
                     int *data,
                     int len)
 {
-    int is_exp_2 = len && !(len & (len - 1));
+    int is_exp_2 = (len & (len - 1)) == 0;
 
     if (!is_exp_2)
     {
@@ -106,24 +111,28 @@ int parallel_reduce(int (*op)(int, int),
         // int result_1 = parallel_reduce(op, data, max_exp_2);
         // int result_2 = parallel_reduce(op, data + max_exp_2, len - max_exp_2);
 
-        struct parallel_reduce_inner inner_1 = {op, data, max_exp_2, 0};
-        struct parallel_reduce_inner inner_2 = {op, data + max_exp_2, len - max_exp_2, 0};
+        struct parallel_reduce_inner_arg inner_arg_1 = {op, data, max_exp_2, 0};
+        struct parallel_reduce_inner_arg inner_arg_2 = {op, data + max_exp_2, len - max_exp_2, 0};
 
         pthread_t thread_1;
         pthread_t thread_2;
 
-        pthread_create(&thread_1, NULL, parallel_reduce_inner, (void *)(&inner_1));
-        pthread_create(&thread_2, NULL, parallel_reduce_inner, (void *)(&inner_2));
+        pthread_create(&thread_1, NULL, parallel_reduce_inner, (void *)(&inner_arg_1));
+        pthread_create(&thread_2, NULL, parallel_reduce_inner, (void *)(&inner_arg_2));
         pthread_join(thread_1, NULL);
         pthread_join(thread_2, NULL);
 
-        int result_1 = inner_1.result;
-        int result_2 = inner_2.result;
+        int result_1 = inner_arg_1.result;
+        int result_2 = inner_arg_2.result;
 
         return op(result_1, result_2);
     }
 
     const int number_of_threads = len / 2;
+    if (number_of_threads == 0)
+    {
+        return data[0];
+    }
 
     pthread_t threads[number_of_threads];
     struct kernel_arg kernel_arg_array[number_of_threads];
@@ -157,7 +166,7 @@ int main()
 {
     // Since our reduce function updates in place, we need to copy the data
     int data[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    int len = sizeof(data) / sizeof(data[0]);
+    int len = sizeof(data) / sizeof(int);
 
     int data_2[len];
     int data_3[len];
@@ -168,6 +177,7 @@ int main()
     }
 
     int seq_sum = reduce(sum, data, len);
+
     int par_sum = parallel_reduce(sum, data, len);
 
     printf("seq sum: %i; par sum: %i\n", seq_sum, par_sum);
