@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <pthread.h>
-#include <stdlib.h>
 
 int max(int a, int b)
 {
@@ -80,27 +79,13 @@ int parallel_reduce(int (*op)(int, int),
                     int len)
 {
     int is_exp_2 = len && !(len & (len - 1));
+
     if (!is_exp_2)
     {
         int max_exp_2 = find_max_exp_2(len);
-        int *exp_data = (int *)malloc(max_exp_2 * sizeof(int));
-        int *rest_data = (int *)malloc((len - max_exp_2) * sizeof(int));
 
-        for (int i = 0; i < max_exp_2; i++)
-        {
-            exp_data[i] = data[i];
-        }
-
-        for (int i = max_exp_2; i < len; i++)
-        {
-            rest_data[i - max_exp_2] = data[i];
-        }
-
-        int result_1 = parallel_reduce(op, exp_data, max_exp_2);
-        int result_2 = parallel_reduce(op, rest_data, len - max_exp_2);
-
-        free(exp_data);
-        free(rest_data);
+        int result_1 = parallel_reduce(op, data, max_exp_2);
+        int result_2 = parallel_reduce(op, data + max_exp_2, len - max_exp_2);
 
         return op(result_1, result_2);
     }
