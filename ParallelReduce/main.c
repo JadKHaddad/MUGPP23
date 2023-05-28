@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <pthread.h>
+#include "main.h"
 
 int max(int a, int b)
 {
@@ -74,6 +75,24 @@ void *kernel(void *arg)
     return NULL;
 }
 
+struct parallel_reduce_inner
+{
+    int (*op)(int, int);
+    int *data;
+    int len;
+    int result;
+};
+
+void *parallel_reduce_inner(void *arg)
+{
+    struct parallel_reduce_inner *inner = (struct parallel_reduce_inner *)arg;
+    int result = parallel_reduce(inner->op, inner->data, inner->len);
+    inner->result = result;
+
+    return NULL;
+}
+
+// Not Optimal
 int parallel_reduce(int (*op)(int, int),
                     int *data,
                     int len)
@@ -84,8 +103,22 @@ int parallel_reduce(int (*op)(int, int),
     {
         int max_exp_2 = find_max_exp_2(len);
 
-        int result_1 = parallel_reduce(op, data, max_exp_2);
-        int result_2 = parallel_reduce(op, data + max_exp_2, len - max_exp_2);
+        // int result_1 = parallel_reduce(op, data, max_exp_2);
+        // int result_2 = parallel_reduce(op, data + max_exp_2, len - max_exp_2);
+
+        struct parallel_reduce_inner inner_1 = {op, data, max_exp_2, 0};
+        struct parallel_reduce_inner inner_2 = {op, data + max_exp_2, len - max_exp_2, 0};
+
+        pthread_t thread_1;
+        pthread_t thread_2;
+
+        pthread_create(&thread_1, NULL, parallel_reduce_inner, (void *)(&inner_1));
+        pthread_create(&thread_2, NULL, parallel_reduce_inner, (void *)(&inner_2));
+        pthread_join(thread_1, NULL);
+        pthread_join(thread_2, NULL);
+
+        int result_1 = inner_1.result;
+        int result_2 = inner_2.result;
 
         return op(result_1, result_2);
     }
@@ -122,7 +155,7 @@ int parallel_reduce(int (*op)(int, int),
 
 int main()
 {
-    // Since our reduce function may update in place(!) if len is exp of 2, we need to copy the data
+    // Since our reduce function updates in place, we need to copy the data
     int data[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     int len = sizeof(data) / sizeof(data[0]);
 
