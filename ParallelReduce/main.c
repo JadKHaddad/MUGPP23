@@ -1,4 +1,7 @@
+#define _XOPEN_SOURCE 600 // required for barriers with -std=c99
+
 #include <stdio.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 void *parallel_reduce_inner(void *arg);
@@ -134,8 +137,11 @@ int parallel_reduce(int (*op)(int, int),
         return data[0];
     }
 
-    pthread_t threads[number_of_threads];
-    struct kernel_arg kernel_arg_array[number_of_threads];
+    // pthread_t threads[number_of_threads];
+    // struct kernel_arg kernel_arg_array[number_of_threads];
+
+    pthread_t *threads = malloc(sizeof(pthread_t) * number_of_threads);
+    struct kernel_arg *kernel_arg_array = malloc(sizeof(struct kernel_arg) * number_of_threads);
 
     pthread_barrier_t barrier;
     pthread_barrier_init(&barrier, NULL, number_of_threads);
@@ -159,6 +165,9 @@ int parallel_reduce(int (*op)(int, int),
 
     pthread_barrier_destroy(&barrier);
 
+    free(kernel_arg_array);
+    free(threads);
+
     return data[0];
 }
 
@@ -166,7 +175,7 @@ int main()
 {
     // Since our reduce function updates in place, we need to copy the data
     int data[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    int len = sizeof(data) / sizeof(int);
+    int len = 10;
 
     int data_2[len];
     int data_3[len];
