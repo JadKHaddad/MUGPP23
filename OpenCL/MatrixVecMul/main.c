@@ -6,22 +6,32 @@
 #include <CL/cl.h>
 #include <string.h>
 
+// Matrix
 float *M;
-float *N;
-float *P_opencl;
-float *P_seq;
+// Vectoren
+float *V;
+float *R_opencl;
+float *R_seq;
+
 int Width;
 int Num_Threads;
 
 const float delta = 0.0001;
 
 // fill f width size many random float values
-void fill(float *f, int size)
+void fillRandom(float *f, int size)
 {
     srand(time(NULL));
     int i;
     for (i = 0; i < size; i += 1)
         f[i] = ((float)rand()) / RAND_MAX;
+}
+
+void fillIncremental(float *f, int size)
+{
+    int i;
+    for (i = 0; i < size; i += 1)
+        f[i] = i;
 }
 
 // compares every pair lhs[i] and rhs[i] for i < width
@@ -44,19 +54,18 @@ void compare(float *lhs, float *rhs, int width)
 }
 
 // sequentiell matrix multiplication
-void MatrixMulSeq()
+void MatrixVecMulSeq()
 {
-    int Col, Row, k;
-    for (Col = 0; Col < Width; ++Col)
-        for (Row = 0; Row < Width; ++Row)
+    int Row, k;
+    for (Row = 0; Row < Width; ++Row)
+    {
+        float sum = 0;
+        for (k = 0; k < Width; k += 1)
         {
-            float sum = 0;
-            for (k = 0; k < Width; k += 1)
-            {
-                sum += M[Row * Width + k] * N[k * Width + Col];
-            }
-            P_seq[Row * Width + Col] = sum;
+            sum += M[Row * Width + k] * V[k];
         }
+        R_seq[Row] = sum;
+    }
 }
 // ######################################################
 // Start OpenCL section
@@ -122,17 +131,15 @@ void makeKernel()
     cl_int err;
     // Kernel Quellcode
     const char *kernelSource = "__kernel \
-void MatrixMultKernel(__global float* Md, \
-                      __global float* Nd, \
-                      __global float* Pd, int width) { \
-  int col = get_global_id(0); \
-  int row = get_global_id(1); \
-  \
-  float sum = 0; \
-  for (int k = 0; k < width; k+=1) \
-    sum += Md[row * width + k] * Nd[k * width + col]; \
-  \
-  Pd[row * width + col] = sum; \
+void MatrixVecMultKernel(__global float* Md, \
+                      __global float* Vd, \
+                      __global float* Rd, int width) { \
+    int Row = get_global_id(0); \
+    float sum = 0; \
+    for (int k = 0; k < width; k += 1) { \
+        sum += Md[Row * width + k] * Vd[k]; \
+    } \
+    Rd[Row] = sum; \
 }";
     // Laenge des Kernel Quellcodes
     size_t sourceLength = strlen(kernelSource);
@@ -147,40 +154,39 @@ void MatrixMultKernel(__global float* Md, \
         printBuildLog(program, device);
     else
         printf("program build successfully\n");
-    kernel = clCreateKernel(program, "MatrixMultKernel", &err);
+    kernel = clCreateKernel(program, "MatrixVecMultKernel", &err);
     checkError(err);
     printf("kernel created\n");
 }
 
-void MatrixMulOpenCL(float *M, float *N, float *P, int width)
+void MatrixVecMulOpenCL(float *m, float *v, float *r, int width)
 {
     cl_int err;
-    int size = width * width * sizeof(float);
 
     // Buffer Md erzeugen und direkt auf das Device kopieren
-    cl_mem Md = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, size, M, &err);
+    cl_mem Md = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, width * width, m, &err);
     checkError(err);
     printf("buffer md created and copied\n");
 
-    // Buffer ND erzeugen ohne zu kopieren
-    cl_mem Nd = clCreateBuffer(context, CL_MEM_READ_ONLY, size, NULL, &err);
+    // Buffer sqdasdasdasdasdasdasdasdasdD erzeugen ohne zu kopieren
+    cl_mem Vd = clCreateBuffer(context, CL_MEM_READ_ONLY, width, NULL, &err);
     checkError(err);
     printf("buffer nd created\n");
     // Daten explizit auf das Device kopieren
     // Dieser Aufruf ist nicht blockierend (CL_FALSE)
-    err = clEnqueueWriteBuffer(commandQueue, Nd, CL_FALSE, 0, size, N, 0, NULL, NULL);
+    err = clEnqueueWriteBuffer(commandQueue, Vd, CL_FALSE, 0, width, v, 0, NULL, NULL);
     checkError(err);
     printf("enqueued write buffer nd\n");
 
     // Speicher fuer Ergebnis Matrix reservieren
-    cl_mem Pd = clCreateBuffer(context, CL_MEM_READ_WRITE, size, NULL, &err);
+    cl_mem Rd = clCreateBuffer(context, CL_MEM_READ_WRITE, width, NULL, &err);
     checkError(err);
     printf("buffer pd created and memory allocated\n");
 
     // Setze Argument fuer den Kernel
     err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &Md);
-    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &Nd);
-    err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &Pd);
+    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &Vd);
+    err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &Rd);
     err |= clSetKernelArg(kernel, 3, sizeof(int), &width);
     checkError(err);
     printf("kernel arguments set\n");
@@ -193,7 +199,7 @@ void MatrixMulOpenCL(float *M, float *N, float *P, int width)
 
     // Daten vom Device kopieren
     // Dieser Aufruf ist blockierend (CL_TRUE)
-    err = clEnqueueReadBuffer(commandQueue, Pd, CL_TRUE, 0, size, P, 0, NULL, NULL);
+    err = clEnqueueReadBuffer(commandQueue, Rd, CL_TRUE, 0, width, r, 0, NULL, NULL);
     checkError(err);
     printf("enqueued read buffer pd\n");
 }
@@ -203,17 +209,42 @@ void MatrixMulOpenCL(float *M, float *N, float *P, int width)
 
 void init()
 {
-    Width = 1024;
+    Width = 5;
     M = (float *)malloc(Width * Width * sizeof(float));
-    N = (float *)malloc(Width * Width * sizeof(float));
-    P_opencl = (float *)malloc(Width * Width * sizeof(float));
-    P_seq = (float *)malloc(Width * Width * sizeof(float));
+    V = (float *)malloc(Width * sizeof(float));
+    R_opencl = (float *)malloc(Width * sizeof(float));
+    R_seq = (float *)malloc(Width * sizeof(float));
 
-    fill(M, Width * Width);
-    fill(N, Width * Width);
+    // fillRandom(M, Width * Width);
+    // fillRandom(V, Width);
+    fillIncremental(M, Width * Width);
+    fillIncremental(V, Width);
+
     initOpenCL();
     makeKernel();
 };
+
+void printVector(float *f, int size)
+{
+    for (int i = 0; i < size; i++)
+    {
+        printf("%f ", f[i]);
+    }
+    printf("\n");
+}
+
+void printMatrix(float *f, int size)
+{
+    for (int i = 0; i < size; i++)
+    {
+        printf("%f ", f[i]);
+        if ((i + 1) % Width == 0)
+        {
+            printf("\n");
+        }
+    }
+    printf("\n");
+}
 
 int main(void)
 {
@@ -221,20 +252,20 @@ int main(void)
     init();
 
     gettimeofday(&start, NULL);
-    MatrixMulOpenCL(M, N, P_opencl, Width);
+    MatrixVecMulOpenCL(M, V, R_opencl, Width);
     gettimeofday(&end, NULL);
     printf("Time elapsed OpenCL: %fmsecs\n",
            (float)(1000.0 * (end.tv_sec - start.tv_sec) + 0.001 * (end.tv_usec - start.tv_usec)));
 
     gettimeofday(&start, NULL);
-    MatrixMulSeq();
+    MatrixVecMulSeq();
     gettimeofday(&end, NULL);
     printf("Time elapsed Seq: %fmsecs\n",
            (float)(1000.0 * (end.tv_sec - start.tv_sec) + 0.001 * (end.tv_usec - start.tv_usec)));
 
-    compare(P_seq, P_opencl, Width * Width);
+    compare(R_seq, R_opencl, Width);
 
     return 0;
 }
 
-// gcc -o main ./main.c -lOpenCL
+// gcc -o main ./main.c -lOpenCL && ./main
