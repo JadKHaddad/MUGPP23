@@ -135,12 +135,14 @@ void MatrixVecMultKernel(__global float* Md, \
                       __global float* Vd, \
                       __global float* Rd, int width) { \
     int Row = get_global_id(0); \
+    if (Row >= width) return; \
     float sum = 0; \
     for (int k = 0; k < width; k += 1) { \
         sum += Md[Row * width + k] * Vd[k]; \
     } \
     Rd[Row] = sum; \
-}";
+};";
+
     // Laenge des Kernel Quellcodes
     size_t sourceLength = strlen(kernelSource);
     cl_program program;
@@ -162,24 +164,26 @@ void MatrixVecMultKernel(__global float* Md, \
 void MatrixVecMulOpenCL(float *m, float *v, float *r, int width)
 {
     cl_int err;
+    int m_size = width * width * sizeof(float);
+    int v_size = width * sizeof(float);
 
     // Buffer Md erzeugen und direkt auf das Device kopieren
-    cl_mem Md = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, width * width, m, &err);
+    cl_mem Md = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, m_size, m, &err);
     checkError(err);
     printf("buffer md created and copied\n");
 
-    // Buffer sqdasdasdasdasdasdasdasdasdD erzeugen ohne zu kopieren
-    cl_mem Vd = clCreateBuffer(context, CL_MEM_READ_ONLY, width, NULL, &err);
+    // Buffer VD erzeugen ohne zu kopieren
+    cl_mem Vd = clCreateBuffer(context, CL_MEM_READ_ONLY, v_size, NULL, &err);
     checkError(err);
-    printf("buffer nd created\n");
+    printf("buffer vd created\n");
     // Daten explizit auf das Device kopieren
     // Dieser Aufruf ist nicht blockierend (CL_FALSE)
-    err = clEnqueueWriteBuffer(commandQueue, Vd, CL_FALSE, 0, width, v, 0, NULL, NULL);
+    err = clEnqueueWriteBuffer(commandQueue, Vd, CL_FALSE, 0, v_size, v, 0, NULL, NULL);
     checkError(err);
     printf("enqueued write buffer nd\n");
 
-    // Speicher fuer Ergebnis Matrix reservieren
-    cl_mem Rd = clCreateBuffer(context, CL_MEM_READ_WRITE, width, NULL, &err);
+    // Speicher fuer Ergebnis Vector reservieren
+    cl_mem Rd = clCreateBuffer(context, CL_MEM_READ_WRITE, v_size, NULL, &err);
     checkError(err);
     printf("buffer pd created and memory allocated\n");
 
@@ -191,15 +195,15 @@ void MatrixVecMulOpenCL(float *m, float *v, float *r, int width)
     checkError(err);
     printf("kernel arguments set\n");
 
-    size_t globalSize[] = {width, width};
+    size_t globalSize[] = {width};
     // Starte Kernel width * width mal
-    err = clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, globalSize, NULL, 0, NULL, NULL);
+    err = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, globalSize, NULL, 0, NULL, NULL);
     checkError(err);
     printf("enqueued kernel\n");
 
     // Daten vom Device kopieren
     // Dieser Aufruf ist blockierend (CL_TRUE)
-    err = clEnqueueReadBuffer(commandQueue, Rd, CL_TRUE, 0, width, r, 0, NULL, NULL);
+    err = clEnqueueReadBuffer(commandQueue, Rd, CL_TRUE, 0, v_size, r, 0, NULL, NULL);
     checkError(err);
     printf("enqueued read buffer pd\n");
 }
@@ -209,16 +213,16 @@ void MatrixVecMulOpenCL(float *m, float *v, float *r, int width)
 
 void init()
 {
-    Width = 5;
+    Width = 1024;
     M = (float *)malloc(Width * Width * sizeof(float));
     V = (float *)malloc(Width * sizeof(float));
     R_opencl = (float *)malloc(Width * sizeof(float));
     R_seq = (float *)malloc(Width * sizeof(float));
 
-    // fillRandom(M, Width * Width);
-    // fillRandom(V, Width);
-    fillIncremental(M, Width * Width);
-    fillIncremental(V, Width);
+    fillRandom(M, Width * Width);
+    fillRandom(V, Width);
+    // fillIncremental(M, Width * Width);
+    // fillIncremental(V, Width);
 
     initOpenCL();
     makeKernel();
