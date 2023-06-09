@@ -2,6 +2,7 @@
 #include <fstream>
 #include <cmath>
 #include <iomanip>
+#include <stdlib.h>
 
 typedef struct
 {
@@ -9,6 +10,18 @@ typedef struct
     unsigned char g;
     unsigned char b;
 } Pixel;
+
+void printImage(Pixel *image, int width, int height)
+{
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            std::cout << "(" << (int)image[x + y * width].r << ", " << (int)image[x + y * width].g << ", " << (int)image[x + y * width].b << ") ";
+        }
+        std::cout << std::endl;
+    }
+}
 
 // write image to a PPM file with the given filename
 void writePPM(Pixel *pixels, const char *filename, int width, int height)
@@ -87,30 +100,55 @@ void calculateWeights(float weights[5][5])
     }
 }
 
+void printWeights(float weights[5][5])
+{
+    for (int x = -2; x <= 2; x++)
+    {
+        for (int y = -2; y <= 2; y++)
+        {
+            std::cout << weights[x + 2][y + 2] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
 void gaussFilter(Pixel *image, int width, int height, float weight[5][5])
 {
+    Pixel *newImage = (Pixel *)malloc(sizeof(Pixel) * width * height);
 
-    for (int x = 0; x < width; ++x)
+    for (int x = 2; x < width - 2; x++)
     {
-        std::cout << "Progress: " << std::fixed << std::setprecision(2) << (float)x / width * 100 << "%\r";
-        for (int y = 0; y < height; ++y)
+        for (int y = 2; y < height - 2; y++)
         {
-            Pixel new_value;
-            new_value.r = 0;
-            new_value.g = 0;
-            new_value.b = 0;
-            for (int xl = -2; xl <= 2; ++xl)
+            float r = 0.0;
+            float g = 0.0;
+            float b = 0.0;
+            for (int i = -2; i <= 2; i++)
             {
-                for (int yl = -2; yl <= 2; ++yl)
+                for (int j = -2; j <= 2; j++)
                 {
-                    new_value.r += image[(x + xl) + (y + yl) * width].r * weight[xl + 2][yl + 2];
-                    new_value.g += image[(x + xl) + (y + yl) * width].g * weight[xl + 2][yl + 2];
-                    new_value.b += image[(x + xl) + (y + yl) * width].b * weight[xl + 2][yl + 2];
+                    r += image[(x + i) + (y + j) * width].r * weight[i + 2][j + 2];
+                    g += image[(x + i) + (y + j) * width].g * weight[i + 2][j + 2];
+                    b += image[(x + i) + (y + j) * width].b * weight[i + 2][j + 2];
                 }
             }
-            image[x + y * width] = new_value;
+            newImage[x + y * width].r = r;
+            newImage[x + y * width].g = g;
+            newImage[x + y * width].b = b;
         }
     }
+
+    for (int x = 2; x < width - 2; x++)
+    {
+        for (int y = 2; y < height - 2; y++)
+        {
+            image[x + y * width].r = newImage[x + y * width].r;
+            image[x + y * width].g = newImage[x + y * width].g;
+            image[x + y * width].b = newImage[x + y * width].b;
+        }
+    }
+
+    free(newImage);
 }
 
 int main(int argc, char **argv)
