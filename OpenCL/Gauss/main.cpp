@@ -446,8 +446,8 @@ int main(int argc, char **argv)
     const char *outFilename_opencl = (argc > 3) ? argv[3] : "output_opencl.ppm";
 
     float weights[5][5];
-    // calculateWeights(weights);
-    calculateSimpleWeights(weights);
+    calculateWeights(weights);
+    // calculateSimpleWeights(weights);
     int width;
     int height;
 
