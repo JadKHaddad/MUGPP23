@@ -274,9 +274,9 @@ Pixel *gaussFilter(Pixel *image, int width, int height, float weight[5][5])
             {
                 for (int j = 0; j < 5; j++)
                 {
-                    r += image[(x + 2 + i) + (y + 2 + j) * width].r * weight[i][j];
-                    g += image[(x + 2 + i) + (y + 2 + j) * width].g * weight[i][j];
-                    b += image[(x + 2 + i) + (y + 2 + j) * width].b * weight[i][j];
+                    r += image[(x + i) + (y + j) * width].r * weight[i][j];
+                    g += image[(x + i) + (y + j) * width].g * weight[i][j];
+                    b += image[(x + i) + (y + j) * width].b * weight[i][j];
                 }
             }
             newImage[x + y * width].r = r;
