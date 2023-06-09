@@ -16,30 +16,26 @@ const char *kernelSource = "__kernel \
 void gaussFilter(__global unsigned char * flatRValues, \
                     __global unsigned char * flatGValues, \
                     __global unsigned char * flatBValues, \
-                    __global unsigned char * flatRValuesOut, \
-                    __global unsigned char * flatGValuesOut, \
-                    __global unsigned char * flatBValuesOut, \
                     __global float * flatWeights, \
-                    const int width, \
-                    const int height) \
+                    const int width) \
     { \
         int x = get_global_id(0); \
         int y = get_global_id(1); \
         float r = 0.0; \
         float g = 0.0; \
         float b = 0.0; \
-        for (int i = -2; i <= 2; i++) \
+        for (int i = 0; i < 5; i++) \
         { \
-            for (int j = -2; j <= 2; j++) \
+            for (int j = 0; j < 5; j++) \
             { \
-                r += flatRValues[(x + i) + (y + j) * width] * flatWeights[(i + 2) + (j + 2) * 5]; \
-                g += flatGValues[(x + i) + (y + j) * width] * flatWeights[(i + 2) + (j + 2) * 5]; \
-                b += flatBValues[(x + i) + (y + j) * width] * flatWeights[(i + 2) + (j + 2) * 5]; \
+                r += flatRValues[(x + 2 + i) + (y + 2 + j) * width] * flatWeights[i + j * 5]; \
+                g += flatGValues[(x + 2 + i) + (y + 2 + j) * width] * flatWeights[i + j * 5]; \
+                b += flatBValues[(x + 2 + i) + (y + 2 + j) * width] * flatWeights[i + j * 5]; \
             } \
         } \
-        flatRValuesOut[x + y * width] = r; \
-        flatGValuesOut[x + y * width] = g; \
-        flatBValuesOut[x + y * width] = b; \
+        flatRValues[x + y * width] = r; \
+        flatGValues[x + y * width] = g; \
+        flatBValues[x + y * width] = b; \
     }";
 
 typedef struct
@@ -49,7 +45,7 @@ typedef struct
     unsigned char b;
 } Pixel;
 
-unsigned char *flattenRValues(Pixel *image, int width, int height)
+unsigned char *extractRValues(Pixel *image, int width, int height)
 {
     unsigned char *rValues = (unsigned char *)malloc(sizeof(unsigned char) * width * height);
     for (int i = 0; i < width * height; i++)
@@ -59,7 +55,7 @@ unsigned char *flattenRValues(Pixel *image, int width, int height)
     return rValues;
 }
 
-unsigned char *flattenGValues(Pixel *image, int width, int height)
+unsigned char *extractGValues(Pixel *image, int width, int height)
 {
     unsigned char *gValues = (unsigned char *)malloc(sizeof(unsigned char) * width * height);
     for (int i = 0; i < width * height; i++)
@@ -69,7 +65,7 @@ unsigned char *flattenGValues(Pixel *image, int width, int height)
     return gValues;
 }
 
-unsigned char *flattenBValues(Pixel *image, int width, int height)
+unsigned char *extractBValues(Pixel *image, int width, int height)
 {
     unsigned char *bValues = (unsigned char *)malloc(sizeof(unsigned char) * width * height);
     for (int i = 0; i < width * height; i++)
@@ -79,7 +75,7 @@ unsigned char *flattenBValues(Pixel *image, int width, int height)
     return bValues;
 }
 
-Pixel *unflattenRGBValues(unsigned char *rValues, unsigned char *gValues, unsigned char *bValues, int width, int height)
+Pixel *combineRGBValues(unsigned char *rValues, unsigned char *gValues, unsigned char *bValues, int width, int height)
 {
     Pixel *image = (Pixel *)malloc(sizeof(Pixel) * width * height);
     for (int i = 0; i < width * height; i++)
@@ -108,13 +104,17 @@ void printImage(Pixel *image, int width, int height)
     }
 }
 
-void compareImages(Pixel *image1, Pixel *image2, int width, int height, const float delta)
+void compareImages(Pixel *image1, Pixel *image2, int width, int height, const unsigned char delta)
 {
     bool equal = true;
     for (int i = 0; i < width * height; i++)
     {
         if (fabs(image1[i].r - image2[i].r) >= delta || fabs(image1[i].g - image2[i].g) >= delta || fabs(image1[i].b - image2[i].b) >= delta)
         {
+            std::cout << "Images are not equal at pixel " << i << std::endl;
+            std::cout << "values are: " << std::endl;
+            std::cout << "(" << (int)image1[i].r << ", " << (int)image1[i].g << ", " << (int)image1[i].b << ") ";
+            std::cout << "(" << (int)image2[i].r << ", " << (int)image2[i].g << ", " << (int)image2[i].b << ") ";
             equal = false;
             break;
         }
@@ -229,7 +229,7 @@ void printWeights(float weights[5][5])
     }
 }
 
-void print2DFlatWeights(float *weights)
+void printFlatWeights(float *weights)
 {
     for (int x = 0; x < 5; x++)
     {
@@ -263,20 +263,20 @@ Pixel *gaussFilter(Pixel *image, int width, int height, float weight[5][5])
 {
     Pixel *newImage = (Pixel *)malloc(sizeof(Pixel) * width * height);
 
-    for (int x = 2; x < width - 2; x++)
+    for (int x = 0; x < width; x++)
     {
-        for (int y = 2; y < height - 2; y++)
+        for (int y = 0; y < height; y++)
         {
             float r = 0.0;
             float g = 0.0;
             float b = 0.0;
-            for (int i = -2; i <= 2; i++)
+            for (int i = 0; i < 5; i++)
             {
-                for (int j = -2; j <= 2; j++)
+                for (int j = 0; j < 5; j++)
                 {
-                    r += image[(x + i) + (y + j) * width].r * weight[i + 2][j + 2];
-                    g += image[(x + i) + (y + j) * width].g * weight[i + 2][j + 2];
-                    b += image[(x + i) + (y + j) * width].b * weight[i + 2][j + 2];
+                    r += image[(x + 2 + i) + (y + 2 + j) * width].r * weight[i][j];
+                    g += image[(x + 2 + i) + (y + 2 + j) * width].g * weight[i][j];
+                    b += image[(x + 2 + i) + (y + 2 + j) * width].b * weight[i][j];
                 }
             }
             newImage[x + y * width].r = r;
@@ -365,64 +365,43 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     makeKernel();
     cl_int err;
 
-    // flattening input data
+    // data
     float *flatWeights = flattenWeights(weight);
-    unsigned char *flatRValues = flattenRValues(image, width, height);
-    unsigned char *flatGValues = flattenGValues(image, width, height);
-    unsigned char *flatBValues = flattenBValues(image, width, height);
-
-    // create output data
-    unsigned char *outRValues = (unsigned char *)malloc(sizeof(unsigned char) * width * height);
-    unsigned char *outGValues = (unsigned char *)malloc(sizeof(unsigned char) * width * height);
-    unsigned char *outBValues = (unsigned char *)malloc(sizeof(unsigned char) * width * height);
+    unsigned char *RValues = extractRValues(image, width, height);
+    unsigned char *GValues = extractGValues(image, width, height);
+    unsigned char *BValues = extractBValues(image, width, height);
 
     // do some memory allocation on the device
-    cl_mem inputRValues = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(unsigned char) * width * height, NULL, &err);
+    cl_mem kernelRValues = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned char) * width * height, NULL, &err);
     checkError(err);
     std::cout << "inputRValues created" << std::endl;
 
-    cl_mem inputGValues = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(unsigned char) * width * height, NULL, &err);
+    cl_mem kernelGValues = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned char) * width * height, NULL, &err);
     checkError(err);
     std::cout << "inputGValues created" << std::endl;
 
-    cl_mem inputBValues = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(unsigned char) * width * height, NULL, &err);
+    cl_mem kernelBValues = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned char) * width * height, NULL, &err);
     checkError(err);
     std::cout << "inputBValues created" << std::endl;
 
-    cl_mem inputWeights = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float) * 25, NULL, &err);
+    cl_mem kernelWeights = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float) * 25, NULL, &err);
     checkError(err);
     std::cout << "inputWeights created" << std::endl;
 
-    cl_mem outputRValues = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(unsigned char) * width * height, NULL, &err);
-    checkError(err);
-    std::cout << "outputRValues created" << std::endl;
-
-    cl_mem outputGValues = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(unsigned char) * width * height, NULL, &err);
-    checkError(err);
-    std::cout << "outputGValues created" << std::endl;
-
-    cl_mem outputBValues = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(unsigned char) * width * height, NULL, &err);
-    checkError(err);
-    std::cout << "outputBValues created" << std::endl;
-
     // set kernel arguments
-    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &inputRValues);
-    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &inputGValues);
-    err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &inputBValues);
-    err |= clSetKernelArg(kernel, 3, sizeof(cl_mem), &outputRValues);
-    err |= clSetKernelArg(kernel, 4, sizeof(cl_mem), &outputGValues);
-    err |= clSetKernelArg(kernel, 5, sizeof(cl_mem), &outputBValues);
-    err |= clSetKernelArg(kernel, 6, sizeof(cl_mem), &inputWeights);
-    err |= clSetKernelArg(kernel, 7, sizeof(int), &width);
-    err |= clSetKernelArg(kernel, 8, sizeof(int), &height);
+    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &kernelRValues);
+    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &kernelGValues);
+    err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &kernelBValues);
+    err |= clSetKernelArg(kernel, 3, sizeof(cl_mem), &kernelWeights);
+    err |= clSetKernelArg(kernel, 4, sizeof(int), &width);
     checkError(err);
     std::cout << "kernel arguments set" << std::endl;
 
     // copy input data to device
-    err = clEnqueueWriteBuffer(commandQueue, inputRValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, flatRValues, 0, NULL, NULL);
-    err |= clEnqueueWriteBuffer(commandQueue, inputGValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, flatGValues, 0, NULL, NULL);
-    err |= clEnqueueWriteBuffer(commandQueue, inputBValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, flatBValues, 0, NULL, NULL);
-    err |= clEnqueueWriteBuffer(commandQueue, inputWeights, CL_TRUE, 0, sizeof(float) * 25, flatWeights, 0, NULL, NULL);
+    err = clEnqueueWriteBuffer(commandQueue, kernelRValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, RValues, 0, NULL, NULL);
+    err |= clEnqueueWriteBuffer(commandQueue, kernelGValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, GValues, 0, NULL, NULL);
+    err |= clEnqueueWriteBuffer(commandQueue, kernelBValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, BValues, 0, NULL, NULL);
+    err |= clEnqueueWriteBuffer(commandQueue, kernelWeights, CL_TRUE, 0, sizeof(float) * 25, flatWeights, 0, NULL, NULL);
     checkError(err);
     std::cout << "input data copied to device" << std::endl;
 
@@ -433,33 +412,27 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     std::cout << "kernel executed" << std::endl;
 
     // copy output data back to host
-    err = clEnqueueReadBuffer(commandQueue, outputRValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, outRValues, 0, NULL, NULL);
-    err |= clEnqueueReadBuffer(commandQueue, outputGValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, outGValues, 0, NULL, NULL);
-    err |= clEnqueueReadBuffer(commandQueue, outputBValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, outBValues, 0, NULL, NULL);
+    err = clEnqueueReadBuffer(commandQueue, kernelRValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, RValues, 0, NULL, NULL);
+    err |= clEnqueueReadBuffer(commandQueue, kernelGValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, GValues, 0, NULL, NULL);
+    err |= clEnqueueReadBuffer(commandQueue, kernelBValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, BValues, 0, NULL, NULL);
     checkError(err);
     std::cout << "output data copied back to host" << std::endl;
 
     // combine the three channels to one image
-    Pixel *newImage = unflattenRGBValues(outRValues, outGValues, outBValues, width, height); // must be freed by caller
+    Pixel *newImage = combineRGBValues(RValues, GValues, BValues, width, height); // must be freed by caller
 
     // free memory
+    free(RValues);
+    free(GValues);
+    free(BValues);
     free(flatWeights);
-    free(flatRValues);
-    free(flatGValues);
-    free(flatBValues);
-    free(outRValues);
-    free(outGValues);
-    free(outBValues);
     std::cout << "host memory freed" << std::endl;
 
     // free device memory
-    err = clReleaseMemObject(inputRValues);
-    err |= clReleaseMemObject(inputGValues);
-    err |= clReleaseMemObject(inputBValues);
-    err |= clReleaseMemObject(inputWeights);
-    err |= clReleaseMemObject(outputRValues);
-    err |= clReleaseMemObject(outputGValues);
-    err |= clReleaseMemObject(outputBValues);
+    err = clReleaseMemObject(kernelRValues);
+    err |= clReleaseMemObject(kernelGValues);
+    err |= clReleaseMemObject(kernelBValues);
+    err |= clReleaseMemObject(kernelWeights);
     checkError(err);
     std::cout << "device memory freed" << std::endl;
 
@@ -499,7 +472,7 @@ int main(int argc, char **argv)
     std::cout << "Done writing seq. image" << std::endl;
 
     std::cout << "Comparing images" << std::endl;
-    const float delta = 0.0001;
+    const unsigned char delta = 24;
     compareImages(newImageSeq, newImageOpenCL, width, height, delta);
     std::cout << "Done comparing images" << std::endl;
 
