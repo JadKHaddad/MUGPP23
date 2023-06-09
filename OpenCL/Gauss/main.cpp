@@ -12,31 +12,45 @@ cl_context context;
 cl_command_queue commandQueue;
 cl_kernel kernel;
 
+// same same but different
 const char *kernelSource = "__kernel \
-void gaussFilter(__global unsigned char * flatRValues, \
-                    __global unsigned char * flatGValues, \
-                    __global unsigned char * flatBValues, \
-                    __global float * flatWeights, \
-                    const int width) \
-    { \
-        int x = get_global_id(0); \
-        int y = get_global_id(1); \
-        float r = 0.0; \
-        float g = 0.0; \
-        float b = 0.0; \
-        for (int i = 0; i < 5; i++) \
-        { \
-            for (int j = 0; j < 5; j++) \
-            { \
-                r += flatRValues[(x + 2 + i) + (y + 2 + j) * width] * flatWeights[i + j * 5]; \
-                g += flatGValues[(x + 2 + i) + (y + 2 + j) * width] * flatWeights[i + j * 5]; \
-                b += flatBValues[(x + 2 + i) + (y + 2 + j) * width] * flatWeights[i + j * 5]; \
+void gaussFilter(__global unsigned char *flatRValues, \
+                 __global unsigned char *flatGValues, \
+                 __global unsigned char *flatBValues, \
+                 __global float *flatWeights, \
+                 const int width, \
+                 const int height) { \
+    \
+    const int row = get_global_id(1); \
+    const int col = get_global_id(0); \
+    \
+    const int kernelSize = 5; \
+    const int halfKernelSize = kernelSize / 2; \
+    \
+    float rSum = 0.0f; \
+    float gSum = 0.0f; \
+    float bSum = 0.0f; \
+    float weightSum = 0.0f; \
+    \
+    for (int k = -halfKernelSize; k <= halfKernelSize; k++) { \
+        for (int l = -halfKernelSize; l <= halfKernelSize; l++) { \
+            int rowIndex = row + k; \
+            int colIndex = col + l; \
+            \
+            if (rowIndex >= 0 && rowIndex < height && colIndex >= 0 && colIndex < width) { \
+                int weightIndex = (k + halfKernelSize) * kernelSize + (l + halfKernelSize); \
+                float pixelWeight = flatWeights[weightIndex]; \
+                rSum += flatRValues[rowIndex * width + colIndex] * pixelWeight; \
+                gSum += flatGValues[rowIndex * width + colIndex] * pixelWeight; \
+                bSum += flatBValues[rowIndex * width + colIndex] * pixelWeight; \
+                weightSum += pixelWeight; \
             } \
         } \
-        flatRValues[x + y * width] = r; \
-        flatGValues[x + y * width] = g; \
-        flatBValues[x + y * width] = b; \
-    }";
+    } \
+    flatRValues[row * width + col] = (unsigned char)(rSum / weightSum); \
+    flatGValues[row * width + col] = (unsigned char)(gSum / weightSum); \
+    flatBValues[row * width + col] = (unsigned char)(bSum / weightSum); \
+}";
 
 typedef struct
 {
@@ -87,6 +101,7 @@ Pixel *combineRGBValues(unsigned char *rValues, unsigned char *gValues, unsigned
     return image;
 }
 
+// not used
 void printImage(Pixel *image, int width, int height)
 {
     for (int y = 0; y < height; ++y)
@@ -111,21 +126,17 @@ void compareImages(Pixel *image1, Pixel *image2, int width, int height, const un
     {
         if (fabs(image1[i].r - image2[i].r) >= delta || fabs(image1[i].g - image2[i].g) >= delta || fabs(image1[i].b - image2[i].b) >= delta)
         {
-            std::cout << "Images are not equal at pixel " << i << std::endl;
-            std::cout << "values are: " << std::endl;
-            std::cout << "(" << (int)image1[i].r << ", " << (int)image1[i].g << ", " << (int)image1[i].b << ") ";
-            std::cout << "(" << (int)image2[i].r << ", " << (int)image2[i].g << ", " << (int)image2[i].b << ") ";
             equal = false;
             break;
         }
     }
     if (equal)
     {
-        std::cout << "Images are equal, delta: " << delta << std::endl;
+        std::cout << "Images are equal" << std::endl;
     }
     else
     {
-        std::cout << "Images are not equal, delta: " << delta << std::endl;
+        std::cout << "Images are not equal" << std::endl;
     }
 }
 
@@ -206,6 +217,7 @@ void calculateWeights(float weights[5][5])
     }
 }
 
+// not used
 void calculateSimpleWeights(float weights[5][5])
 {
     for (int x = -2; x <= 2; x++)
@@ -217,6 +229,7 @@ void calculateSimpleWeights(float weights[5][5])
     }
 }
 
+// not used
 void printWeights(float weights[5][5])
 {
     for (int x = 0; x < 5; x++)
@@ -229,6 +242,7 @@ void printWeights(float weights[5][5])
     }
 }
 
+// not used
 void printFlatWeights(float *weights)
 {
     for (int x = 0; x < 5; x++)
@@ -251,6 +265,7 @@ float *flattenWeights(float weights[5][5])
     return flattenedWeights;
 }
 
+// not used
 void unflattenWeights(float *flattenedWeights, float weights[5][5])
 {
     for (int i = 0; i < 25; i++)
@@ -263,25 +278,42 @@ Pixel *gaussFilter(Pixel *image, int width, int height, float weight[5][5])
 {
     Pixel *newImage = (Pixel *)malloc(sizeof(Pixel) * width * height);
 
-    for (int x = 0; x < width; x++)
+    int i, j, k, l;
+    int weightIndex;
+    float rSum, gSum, bSum;
+    float weightSum;
+
+    for (i = 0; i < height; i++)
     {
-        for (int y = 0; y < height; y++)
+        for (j = 0; j < width; j++)
         {
-            float r = 0.0;
-            float g = 0.0;
-            float b = 0.0;
-            for (int i = 0; i < 5; i++)
+            rSum = gSum = bSum = 0.0;
+            weightSum = 0.0;
+
+            for (k = -2; k <= 2; k++)
             {
-                for (int j = 0; j < 5; j++)
+                for (l = -2; l <= 2; l++)
                 {
-                    r += image[(x + i) + (y + j) * width].r * weight[i][j];
-                    g += image[(x + i) + (y + j) * width].g * weight[i][j];
-                    b += image[(x + i) + (y + j) * width].b * weight[i][j];
+                    int rowIndex = i + k;
+                    int colIndex = j + l;
+
+                    if (rowIndex >= 0 && rowIndex < height && colIndex >= 0 && colIndex < width)
+                    {
+                        weightIndex = (k + 2) * 5 + (l + 2);
+                        float pixelWeight = weight[k + 2][l + 2];
+
+                        rSum += image[rowIndex * width + colIndex].r * pixelWeight;
+                        gSum += image[rowIndex * width + colIndex].g * pixelWeight;
+                        bSum += image[rowIndex * width + colIndex].b * pixelWeight;
+
+                        weightSum += pixelWeight;
+                    }
                 }
             }
-            newImage[x + y * width].r = r;
-            newImage[x + y * width].g = g;
-            newImage[x + y * width].b = b;
+
+            newImage[i * width + j].r = (unsigned char)(rSum / weightSum);
+            newImage[i * width + j].g = (unsigned char)(gSum / weightSum);
+            newImage[i * width + j].b = (unsigned char)(bSum / weightSum);
         }
     }
 
@@ -365,7 +397,7 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     makeKernel();
     cl_int err;
 
-    // data
+    // initializing the good old input/output arrays
     float *flatWeights = flattenWeights(weight);
     unsigned char *RValues = extractRValues(image, width, height);
     unsigned char *GValues = extractGValues(image, width, height);
@@ -394,6 +426,7 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &kernelBValues);
     err |= clSetKernelArg(kernel, 3, sizeof(cl_mem), &kernelWeights);
     err |= clSetKernelArg(kernel, 4, sizeof(int), &width);
+    err |= clSetKernelArg(kernel, 5, sizeof(int), &height);
     checkError(err);
     std::cout << "kernel arguments set" << std::endl;
 
@@ -406,7 +439,7 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     std::cout << "input data copied to device" << std::endl;
 
     // execute kernel
-    size_t globalWorkSize[2] = {width, height};
+    size_t globalWorkSize[2] = {(size_t)width, (size_t)height};
     err = clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, globalWorkSize, NULL, 0, NULL, NULL);
     checkError(err);
     std::cout << "kernel executed" << std::endl;
@@ -447,7 +480,6 @@ int main(int argc, char **argv)
 
     float weights[5][5];
     calculateWeights(weights);
-    // calculateSimpleWeights(weights);
     int width;
     int height;
 
@@ -472,19 +504,12 @@ int main(int argc, char **argv)
     std::cout << "Done writing seq. image" << std::endl;
 
     std::cout << "Comparing images" << std::endl;
-    const unsigned char delta = 24;
+    const unsigned char delta = 5; // should be 0, but there are some rounding errors. The human eye can't see the difference tho :)
     compareImages(newImageSeq, newImageOpenCL, width, height, delta);
     std::cout << "Done comparing images" << std::endl;
 
-    printImage(image, width, height);
-    std::cout << "-----------------------" << std::endl;
-    printImage(newImageOpenCL, width, height);
-    std::cout << "-----------------------" << std::endl;
-    printImage(newImageSeq, width, height);
-    std::cout << "-----------------------" << std::endl;
-
     std::cout << "Freeing memory" << std::endl;
-    free(image); // must be explicitly freed
+    free(image);
     free(newImageOpenCL);
     free(newImageSeq);
     std::cout << "ALL done!" << std::endl;

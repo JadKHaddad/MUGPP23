@@ -1,2 +1,4 @@
 main
 output.ppm
+output_opencl.ppm
+output_seq.ppm

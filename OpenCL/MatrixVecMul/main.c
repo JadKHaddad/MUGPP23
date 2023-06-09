@@ -129,11 +129,12 @@ void printBuildLog(cl_program program, cl_device_id device)
 void makeKernel()
 {
     cl_int err;
+
     // Kernel Quellcode
     const char *kernelSource = "__kernel \
 void MatrixVecMultKernel(__global float* Md, \
-                      __global float* Vd, \
-                      __global float* Rd, int width) { \
+                         __global float* Vd, \
+                         __global float* Rd, int width) { \
     int Row = get_global_id(0); \
     if (Row >= width) return; \
     float sum = 0; \
@@ -185,7 +186,7 @@ void MatrixVecMulOpenCL(float *m, float *v, float *r, int width)
     // Speicher fuer Ergebnis Vector reservieren
     cl_mem Rd = clCreateBuffer(context, CL_MEM_READ_WRITE, v_size, NULL, &err);
     checkError(err);
-    printf("buffer pd created and memory allocated\n");
+    printf("buffer rd created and memory allocated\n");
 
     // Setze Argument fuer den Kernel
     err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &Md);
@@ -195,8 +196,8 @@ void MatrixVecMulOpenCL(float *m, float *v, float *r, int width)
     checkError(err);
     printf("kernel arguments set\n");
 
-    size_t globalSize[] = {width};
-    // Starte Kernel width * width mal
+    size_t globalSize[] = {(size_t)width};
+    // Starte Kernel width  mal
     err = clEnqueueNDRangeKernel(commandQueue, kernel, 1, NULL, globalSize, NULL, 0, NULL, NULL);
     checkError(err);
     printf("enqueued kernel\n");
