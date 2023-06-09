@@ -406,19 +406,19 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     // do some memory allocation on the device
     cl_mem kernelRValues = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned char) * width * height, NULL, &err);
     checkError(err);
-    std::cout << "inputRValues created" << std::endl;
+    std::cout << "RValues created" << std::endl;
 
     cl_mem kernelGValues = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned char) * width * height, NULL, &err);
     checkError(err);
-    std::cout << "inputGValues created" << std::endl;
+    std::cout << "GValues created" << std::endl;
 
     cl_mem kernelBValues = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(unsigned char) * width * height, NULL, &err);
     checkError(err);
-    std::cout << "inputBValues created" << std::endl;
+    std::cout << "BValues created" << std::endl;
 
     cl_mem kernelWeights = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float) * 25, NULL, &err);
     checkError(err);
-    std::cout << "inputWeights created" << std::endl;
+    std::cout << "Weights created" << std::endl;
 
     // set kernel arguments
     err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &kernelRValues);
@@ -430,13 +430,13 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     checkError(err);
     std::cout << "kernel arguments set" << std::endl;
 
-    // copy input data to device
+    // copy data to device
     err = clEnqueueWriteBuffer(commandQueue, kernelRValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, RValues, 0, NULL, NULL);
     err |= clEnqueueWriteBuffer(commandQueue, kernelGValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, GValues, 0, NULL, NULL);
     err |= clEnqueueWriteBuffer(commandQueue, kernelBValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, BValues, 0, NULL, NULL);
     err |= clEnqueueWriteBuffer(commandQueue, kernelWeights, CL_TRUE, 0, sizeof(float) * 25, flatWeights, 0, NULL, NULL);
     checkError(err);
-    std::cout << "input data copied to device" << std::endl;
+    std::cout << "data copied to device" << std::endl;
 
     // execute kernel
     size_t globalWorkSize[2] = {(size_t)width, (size_t)height};
@@ -444,12 +444,12 @@ Pixel *gaussFilterOpenCL(Pixel *image, int width, int height, float weight[5][5]
     checkError(err);
     std::cout << "kernel executed" << std::endl;
 
-    // copy output data back to host
+    // copy data back to host
     err = clEnqueueReadBuffer(commandQueue, kernelRValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, RValues, 0, NULL, NULL);
     err |= clEnqueueReadBuffer(commandQueue, kernelGValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, GValues, 0, NULL, NULL);
     err |= clEnqueueReadBuffer(commandQueue, kernelBValues, CL_TRUE, 0, sizeof(unsigned char) * width * height, BValues, 0, NULL, NULL);
     checkError(err);
-    std::cout << "output data copied back to host" << std::endl;
+    std::cout << "data copied back to host" << std::endl;
 
     // combine the three channels to one image
     Pixel *newImage = combineRGBValues(RValues, GValues, BValues, width, height); // must be freed by caller
