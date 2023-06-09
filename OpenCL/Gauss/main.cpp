@@ -97,6 +97,11 @@ void printImage(Pixel *image, int width, int height)
     {
         for (int x = 0; x < width; ++x)
         {
+            if (x == 5)
+            {
+                std::cout << std::endl;
+                return;
+            }
             std::cout << "(" << (int)image[x + y * width].r << ", " << (int)image[x + y * width].g << ", " << (int)image[x + y * width].b << ") ";
         }
         std::cout << std::endl;
@@ -201,13 +206,36 @@ void calculateWeights(float weights[5][5])
     }
 }
 
-void printWeights(float weights[5][5])
+void calculateSimpleWeights(float weights[5][5])
 {
     for (int x = -2; x <= 2; x++)
     {
         for (int y = -2; y <= 2; y++)
         {
-            std::cout << weights[x + 2][y + 2] << " ";
+            weights[x + 2][y + 2] = 1.0 / 25.0;
+        }
+    }
+}
+
+void printWeights(float weights[5][5])
+{
+    for (int x = 0; x < 5; x++)
+    {
+        for (int y = 0; y < 5; y++)
+        {
+            std::cout << weights[x][y] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+void print2DFlatWeights(float *weights)
+{
+    for (int x = 0; x < 5; x++)
+    {
+        for (int y = 0; y < 5; y++)
+        {
+            std::cout << weights[x * 5 + y] << " ";
         }
         std::cout << std::endl;
     }
@@ -231,7 +259,7 @@ void unflattenWeights(float *flattenedWeights, float weights[5][5])
     }
 }
 
-void gaussFilter(Pixel *image, int width, int height, float weight[5][5])
+Pixel *gaussFilter(Pixel *image, int width, int height, float weight[5][5])
 {
     Pixel *newImage = (Pixel *)malloc(sizeof(Pixel) * width * height);
 
@@ -257,17 +285,7 @@ void gaussFilter(Pixel *image, int width, int height, float weight[5][5])
         }
     }
 
-    for (int x = 2; x < width - 2; x++)
-    {
-        for (int y = 2; y < height - 2; y++)
-        {
-            image[x + y * width].r = newImage[x + y * width].r;
-            image[x + y * width].g = newImage[x + y * width].g;
-            image[x + y * width].b = newImage[x + y * width].b;
-        }
-    }
-
-    free(newImage);
+    return newImage;
 }
 
 void checkError(cl_int err)
@@ -455,7 +473,8 @@ int main(int argc, char **argv)
     const char *outFilename_opencl = (argc > 3) ? argv[3] : "output_opencl.ppm";
 
     float weights[5][5];
-    calculateWeights(weights);
+    // calculateWeights(weights);
+    calculateSimpleWeights(weights);
     int width;
     int height;
 
@@ -463,31 +482,38 @@ int main(int argc, char **argv)
     Pixel *image = readPPM(inFilename, &width, &height);
     std::cout << "Done reading image" << std::endl;
 
-    // seq gaussFilter updates the image in place so we will call the kernel first
     std::cout << "Applying opencl filter" << std::endl;
-    Pixel *newImage = gaussFilterOpenCL(image, width, height, weights);
+    Pixel *newImageOpenCL = gaussFilterOpenCL(image, width, height, weights);
     std::cout << "Done applying opencl filter" << std::endl;
 
     std::cout << "Writing opencl image " << outFilename_opencl << std::endl;
-    writePPM(newImage, outFilename_opencl, width, height);
+    writePPM(newImageOpenCL, outFilename_opencl, width, height);
     std::cout << "Done writing opencl image" << std::endl;
 
     std::cout << "Applying seq. filter" << std::endl;
-    gaussFilter(image, width, height, weights);
+    Pixel *newImageSeq = gaussFilter(image, width, height, weights);
     std::cout << "Done applying seq. filter" << std::endl;
 
     std::cout << "Writing seq. image " << outFilename_seq << std::endl;
-    writePPM(image, outFilename_seq, width, height);
+    writePPM(newImageSeq, outFilename_seq, width, height);
     std::cout << "Done writing seq. image" << std::endl;
 
     std::cout << "Comparing images" << std::endl;
     const float delta = 0.0001;
-    compareImages(image, newImage, width, height, delta);
+    compareImages(newImageSeq, newImageOpenCL, width, height, delta);
     std::cout << "Done comparing images" << std::endl;
+
+    printImage(image, width, height);
+    std::cout << "-----------------------" << std::endl;
+    printImage(newImageOpenCL, width, height);
+    std::cout << "-----------------------" << std::endl;
+    printImage(newImageSeq, width, height);
+    std::cout << "-----------------------" << std::endl;
 
     std::cout << "Freeing memory" << std::endl;
     free(image); // must be explicitly freed
-    free(newImage);
+    free(newImageOpenCL);
+    free(newImageSeq);
     std::cout << "ALL done!" << std::endl;
     return 0;
 }
