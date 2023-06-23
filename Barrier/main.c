@@ -28,6 +28,8 @@ void barrier_wait(struct barrier_t *barrier)
     if (barrier->count == barrier->max)
     {
         pthread_cond_broadcast(&barrier->cond);
+        // reset the barrier
+        barrier->count = 0;
     }
     else
     {
