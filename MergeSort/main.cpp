@@ -34,7 +34,6 @@ void sortAndMerge(int *arr, int start, int mid, int end, int lowerLimit, int fre
 
 void mergeSort(int *arr, int start, int end, int lowerLimit, int freeLogicalCores, std::shared_ptr<std::mutex> mtx)
 {
-
     if (start < end)
     {
         int mid = (start + end) / 2;
