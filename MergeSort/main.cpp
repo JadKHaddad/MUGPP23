@@ -2,9 +2,7 @@
 #include <thread>
 #include <shared_mutex>
 #include <mutex>
-
-std::mutex mutex;
-int freeLogicalCores = 0;
+#include <memory>
 
 void merge(int *arr, int start, int mid, int end)
 {
@@ -31,35 +29,38 @@ void merge(int *arr, int start, int mid, int end)
     delete[] temp;
 }
 
-void parallelMergeSort(int *arr, int start, int end, int lowerLimit)
+void mergeSort(int *arr, int start, int end, int lowerLimit, int freeLogicalCores, std::shared_ptr<std::shared_mutex> mtx)
 {
     if (start < end)
     {
         int mid = (start + end) / 2;
 
-        int freeLogicalCoresCount = 0;
-        mutex.lock();
-        freeLogicalCoresCount = freeLogicalCores;
-        mutex.unlock();
-
-        if (freeLogicalCoresCount > 0 && end - start > lowerLimit)
+        int freeLogicalCores_ = 0;
         {
-            mutex.lock();
-            freeLogicalCores--;
-            mutex.unlock();
+            std::shared_lock<std::shared_mutex> lock(*mtx);
+            freeLogicalCores_ = freeLogicalCores;
+        }
 
-            std::thread t(parallelMergeSort, arr, start, mid, lowerLimit);
-            parallelMergeSort(arr, mid + 1, end, lowerLimit);
-            t.join();
+        if (freeLogicalCores_ > 0 && end - start > lowerLimit)
+        {
+            {
+                std::unique_lock<std::shared_mutex> lock(*mtx);
+                freeLogicalCores--;
+            }
 
-            mutex.lock();
-            freeLogicalCores++;
-            mutex.unlock();
+            std::thread thread(mergeSort, arr, start, mid, lowerLimit, freeLogicalCores, mtx);
+            mergeSort(arr, mid + 1, end, lowerLimit, freeLogicalCores, mtx);
+            thread.join();
+
+            {
+                std::unique_lock<std::shared_mutex> lock(*mtx);
+                freeLogicalCores++;
+            }
         }
         else
         {
-            parallelMergeSort(arr, start, mid, lowerLimit);
-            parallelMergeSort(arr, mid + 1, end, lowerLimit);
+            mergeSort(arr, start, mid, lowerLimit, freeLogicalCores, mtx);
+            mergeSort(arr, mid + 1, end, lowerLimit, freeLogicalCores, mtx);
         }
         merge(arr, start, mid, end);
     }
@@ -81,14 +82,15 @@ void print(int *arr, int n)
 
 int main()
 {
-    freeLogicalCores = std::thread::hardware_concurrency();
+    int freeLogicalCores = std::thread::hardware_concurrency();
+    std::shared_ptr<std::shared_mutex> mtx = std::make_shared<std::shared_mutex>();
 
-    int numberOfElements = 100;
-    int lowerLimit = 10;
+    int numberOfElements = 1000;
+    int lowerLimit = 100;
 
     int arr[numberOfElements];
     randomize(arr, numberOfElements);
-    parallelMergeSort(arr, 0, numberOfElements, lowerLimit);
+    mergeSort(arr, 0, numberOfElements, lowerLimit, freeLogicalCores, mtx);
     print(arr, numberOfElements);
 
     return 0;
