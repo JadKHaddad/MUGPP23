@@ -1,8 +1,4 @@
-#include <iostream>
-#include <thread>
-#include <shared_mutex>
-#include <mutex>
-#include <memory>
+#include "main.hpp"
 
 void merge(int *arr, int start, int mid, int end)
 {
@@ -29,51 +25,63 @@ void merge(int *arr, int start, int mid, int end)
     delete[] temp;
 }
 
-void mergeSort(int *arr, int start, int end, int lowerLimit, int freeLogicalCores, std::shared_ptr<std::shared_mutex> mtx)
+void sortAndMerge(int *arr, int start, int mid, int end, int lowerLimit, int freeLogicalCores, std::shared_ptr<std::mutex> mtx)
 {
+    mergeSort(arr, start, mid, lowerLimit, freeLogicalCores, mtx);
+    mergeSort(arr, mid + 1, end, lowerLimit, freeLogicalCores, mtx);
+    merge(arr, start, mid, end);
+};
+
+void mergeSort(int *arr, int start, int end, int lowerLimit, int freeLogicalCores, std::shared_ptr<std::mutex> mtx)
+{
+
     if (start < end)
     {
         int mid = (start + end) / 2;
 
-        int freeLogicalCores_ = 0;
+        if (end - start > lowerLimit)
         {
-            std::shared_lock<std::shared_mutex> lock(*mtx);
-            freeLogicalCores_ = freeLogicalCores;
-        }
-
-        if (freeLogicalCores_ > 0 && end - start > lowerLimit)
-        {
+            bool spawnThread = false;
             {
-                std::unique_lock<std::shared_mutex> lock(*mtx);
-                freeLogicalCores--;
+                std::unique_lock<std::mutex> lock(*mtx);
+                if (freeLogicalCores > 0)
+                {
+                    freeLogicalCores--;
+                    spawnThread = true;
+                }
             }
 
-            std::thread thread(mergeSort, arr, start, mid, lowerLimit, freeLogicalCores, mtx);
-            mergeSort(arr, mid + 1, end, lowerLimit, freeLogicalCores, mtx);
-            thread.join();
-
+            if (spawnThread)
             {
-                std::unique_lock<std::shared_mutex> lock(*mtx);
-                freeLogicalCores++;
+                std::thread lovelyThread(mergeSort, arr, start, mid, lowerLimit, freeLogicalCores, mtx);
+                mergeSort(arr, mid + 1, end, lowerLimit, freeLogicalCores, mtx);
+
+                lovelyThread.join();
+                {
+                    std::unique_lock<std::mutex> lock(*mtx);
+                    freeLogicalCores++;
+                }
+
+                merge(arr, start, mid, end);
+                return;
             }
+
+            sortAndMerge(arr, start, mid, end, lowerLimit, freeLogicalCores, mtx);
+            return;
         }
-        else
-        {
-            mergeSort(arr, start, mid, lowerLimit, freeLogicalCores, mtx);
-            mergeSort(arr, mid + 1, end, lowerLimit, freeLogicalCores, mtx);
-        }
-        merge(arr, start, mid, end);
+
+        sortAndMerge(arr, start, mid, end, lowerLimit, freeLogicalCores, mtx);
     }
 }
 
-void randomize(int *arr, int n)
+void randomizeArray(int *arr, int n)
 {
     srand(time(NULL));
     for (int i = 0; i < n; i++)
         arr[i] = rand() % 1000;
 }
 
-void print(int *arr, int n)
+void printArray(int *arr, int n)
 {
     for (int i = 0; i < n; i++)
         std::cout << arr[i] << " ";
@@ -83,15 +91,15 @@ void print(int *arr, int n)
 int main()
 {
     int freeLogicalCores = std::thread::hardware_concurrency();
-    std::shared_ptr<std::shared_mutex> mtx = std::make_shared<std::shared_mutex>();
+    std::shared_ptr<std::mutex> mtx = std::make_shared<std::mutex>();
 
     int numberOfElements = 1000;
     int lowerLimit = 100;
 
     int arr[numberOfElements];
-    randomize(arr, numberOfElements);
+    randomizeArray(arr, numberOfElements);
     mergeSort(arr, 0, numberOfElements, lowerLimit, freeLogicalCores, mtx);
-    print(arr, numberOfElements);
+    printArray(arr, numberOfElements);
 
     return 0;
 }
