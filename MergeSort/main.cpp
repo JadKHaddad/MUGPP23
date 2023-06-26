@@ -95,10 +95,11 @@ int main()
     int numberOfElements = 1000;
     int lowerLimit = 100;
 
-    int arr[numberOfElements];
+    int *arr = new int[numberOfElements];
     randomizeArray(arr, numberOfElements);
     mergeSort(arr, 0, numberOfElements, lowerLimit, freeLogicalCores, mtx);
     printArray(arr, numberOfElements);
+    delete[] arr;
 
     return 0;
 }
